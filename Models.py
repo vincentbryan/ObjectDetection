@@ -2,23 +2,8 @@ import tensorflow as tf
 import Parameter as param
 
 
-def cnn_3d(sess, voxel, is_training=True):
-
-    phase = tf.placeholder(tf.bool, name='phase') if is_training else None
-
-    with tf.variable_scope("cnn_3d") as scope:
-        model = Layers()
-        model.build_model(voxel)
-
-    # if is_training:
-    #     initialized_var = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="cnn_3d")
-    #     sess.run(tf.variables_initializer(initialized_var))
-
-    return model
-
-
-class Layers(object):
-    def __init__(self):
+class cnn_3d(object):
+    def __init__(self, voxel):
         self.layer1 = None
         self.layer2 = None
         self.layer3 = None
@@ -26,6 +11,7 @@ class Layers(object):
         self.object_detection = None
         self.objectness_predict = None
         self.boundary_box = None
+        self.build_model(voxel)
         pass
 
     def conv_3d_layer(self, input_layer, input_dim, output_dim,
@@ -47,7 +33,6 @@ class Layers(object):
             output_layer = activation(output_layer, name="activation")
 
             # TODO batch normalization!!!
-            # output_layer = activation(output_layer, name="activation") if activation else batch_norm(output_layer, is_training)
 
         return output_layer
 

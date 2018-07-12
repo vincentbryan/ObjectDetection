@@ -4,12 +4,13 @@ import pcl
 import Parameter as param
 from sensor_msgs.msg import PointCloud2
 
+
 def clipper(location, rotation, shape):
     x_clipper = np.logical_and(location[:, 0] >= param.X_RANGE[0], location[:, 0] < param.X_RANGE[1])
     y_clipper = np.logical_and(location[:, 1] >= param.Y_RANGE[0], location[:, 1] < param.Y_RANGE[1])
     z_clipper = np.logical_and(location[:, 2] + shape[:, 0]/2 >= param.Z_RANGE[0],
                            location[:, 2] + shape[:, 0]/2 < param.Z_RANGE[1])
-    index_clipped = np.logical_and(x_clipper, y_clipper, z_clipper)
+    index_clipped = np.logical_and(x_clipper, np.logical_and(y_clipper, z_clipper))
     return index_clipped
 
 
@@ -104,12 +105,16 @@ def get_objectness_label(location, rotation, shape):
 
 
 def vel_coordinate_to_anchor(position):
-    # TODO
-    scale = param.STRIDE_STEP ** 4
-    anchor_idx = ((position - [param.X_RANGE[0], param.Y_RANGE[0], param.Z_RANGE[0]]) / scale).astype(np.int32)
+    anchor_idx = ((position - [param.X_RANGE[0], param.Y_RANGE[0], param.Z_RANGE[0]]) / param.RESOLUTION / param.SCALE).astype(np.int32)
     return anchor_idx
 
 
 def anchor_to_vel_coordinate(index):
-    position = (index + [param.X_RANGE[0], param.Y_RANGE[0], param.Z_RANGE[0]]) * param.STRIDE_STEP ** 4
-    return position
+    pos_in_voxel = index * param.SCALE
+    pos_in_vel = pos_in_voxel * param.RESOLUTION + [param.X_RANGE[0], param.Y_RANGE[0], param.Z_RANGE[0]]
+    return pos_in_vel
+
+
+def voxel_to_vel_coordinate(index):
+    pos_in_vel = index * param.RESOLUTION + [param.X_RANGE[0], param.Y_RANGE[0], param.Z_RANGE[0]]
+    return pos_in_vel

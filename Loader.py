@@ -4,10 +4,7 @@ import pcl
 import glob
 import Parameter as param
 import Transformer
-import rospy
-import std_msgs.msg
-import sensor_msgs.point_cloud2 as pc2
-from sensor_msgs.msg import PointCloud2
+
 
 
 def load_from_pcd(path):
@@ -22,9 +19,13 @@ def load_from_bin(path):
 
 # Extract ROI: the sector in front of the vehicle
 def angle_filter(data):
-    res = np.logical_and( (data[:, 1] < data[:, 0] - 0.27),
-                          (-data[:, 1] < data[:, 0] - 0.27))
-    return data[res]
+    x_dim = np.logical_and(data[:, 0] > param.X_RANGE[0], data[:, 0] < param.X_RANGE[1])
+    y_dim = np.logical_and(data[:, 1] > param.Y_RANGE[0], data[:, 1] < param.Y_RANGE[1])
+    z_dim = np.logical_and(data[:, 2] > param.Z_RANGE[0], data[:, 2] < param.Z_RANGE[1])
+
+    res_idx = np.logical_and(x_dim, np.logical_and(y_dim, z_dim))
+
+    return data[res_idx]
 
 
 def read_label_from_txt(file):
@@ -62,12 +63,8 @@ def label_parser(label_file, rt_cam_to_vel):
     if param.LABEL_FORMAT == 'txt':
 
         location, shape, rotation = read_label_from_txt(label_file)
-        # TODO Optimizer
-        if len(location) == 0:
-            return None, None, None
-        elif len(shape) == 0:
-            return None, None, None
-        elif len(rotation) == 0:
+
+        if len(location) == 0 or len(shape) == 0 or len(rotation) == 0:
             return None, None, None
 
         rotation = np.pi / 2 - rotation
@@ -75,11 +72,18 @@ def label_parser(label_file, rt_cam_to_vel):
 
         location = np.dot(rt_cam_to_vel, location.transpose())[:3, :]
         location = location.transpose()
+
+        location_idx = Transformer.clipper(location, rotation, shape)
+
+        if len(location_idx) == 0:
+            return None, None, None
+
+        location = location[location_idx]
+
     else:
         print "Invalid label format!!!"
 
     return location, rotation, shape
-
 
 
 def calib_parser(calib_file):
@@ -109,9 +113,9 @@ def calib_parser(calib_file):
 
 def get_next_batch(data_path, label_path, calib_path):
 
-    data_path_ = glob.glob(data_path)
-    label_path_ = glob.glob(label_path)
-    calib_path_ = glob.glob(calib_path)
+    data_path_ = glob.glob(data_path + "*")
+    label_path_ = glob.glob(label_path + "*")
+    calib_path_ = glob.glob(calib_path + "*")
 
     data_path_.sort()
     label_path_.sort()
@@ -127,13 +131,12 @@ def get_next_batch(data_path, label_path, calib_path):
         start_idx = iter * param.BATCH_SIZE
         end_idx = (iter+1) * param.BATCH_SIZE
 
-        print ("Dealing Batch : %d " % iter)
-
+        print "- - - - - - - - - - -"
+        print ("  Batch : %2d/%2d    " % (iter, iter_times))
+        print "- - - - - - - - - - -"
         for iter_data_path, iter_label_path, iter_calib_path in zip(data_path_[start_idx:end_idx],
                                                                     label_path_[start_idx:end_idx],
                                                                     calib_path_[start_idx:end_idx]):
-
-
 
             point_cloud = None
             rt_cam_to_vel = None
@@ -142,7 +145,7 @@ def get_next_batch(data_path, label_path, calib_path):
             shape = None
             boundary_boxes = None
 
-            print "Dealing data : " + iter_data_path.split("/")[-1]
+            print "Loading : " + iter_data_path.split("/")[-1]
 
             if param.DATA_FORMAT == 'pcd':
                 point_cloud = load_from_pcd(iter_data_path)
@@ -166,21 +169,44 @@ def get_next_batch(data_path, label_path, calib_path):
 
         yield voxel_batch, label_batch
 
-        # yield np.array(batch_voxel, dtype=np.float32)[:, :, :, :, np.newaxis], np.array(batch_obj_map, dtype=np.float32)
+
+def get_test_voxel(data_path):
+
+    point_cloud = None
+
+    if param.DATA_FORMAT == 'pcd':
+        point_cloud = load_from_pcd(data_path)
+    elif param.DATA_FORMAT == 'bin':
+        point_cloud = load_from_bin(data_path)
+
+    point_cloud = angle_filter(point_cloud)
+
+    voxel = Transformer.raw_to_voxel(point_cloud)
+
+    return point_cloud, voxel[np.newaxis, :]
 
 
-def publisher(point_cloud):
+def get_visualize_input(data_path, calib_path, label_path):
 
-    pub = rospy.Publisher("/points_raw", PointCloud2, queue_size=100000)
-    rospy.init_node("cnn_3d_point_cloud")
-    header = std_msgs.msg.Header()
-    header.stamp = rospy.Time.now()
-    header.frame_id = "cnn_3d_point_cloud"
-    points = pc2.create_cloud_xyz32(header, point_cloud[:, :3])
+    point_cloud = None
+    rt_cam_to_vel = None
+    position = None
+    rotation = None
+    shape = None
 
-    sleep_rate = rospy.Rate(0.1)
-    while not rospy.is_shutdown():
-        pub.publish(points)
-        sleep_rate.sleep()
+    if param.DATA_FORMAT == 'pcd':
+        point_cloud = load_from_pcd(data_path)
+    elif param.DATA_FORMAT == 'bin':
+        point_cloud = load_from_bin(data_path)
+
+    if calib_path:
+        rt_cam_to_vel = calib_parser(calib_path)
+
+    if label_path:
+        position, rotation, shape = label_parser(label_path, rt_cam_to_vel)
+
+    point_cloud = angle_filter(point_cloud)
+    gt_objectness = Transformer.get_objectness_label(position, rotation, shape)
+    return point_cloud, gt_objectness[np.newaxis, :]
 
 
