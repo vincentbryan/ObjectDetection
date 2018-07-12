@@ -6,7 +6,6 @@ import Parameter as param
 import Transformer
 
 
-
 def load_from_pcd(path):
     point_cloud = pcl.load(path)
     return np.array(list(point_cloud), dtype=np.float32)
@@ -134,6 +133,7 @@ def get_next_batch(data_path, label_path, calib_path):
         print "- - - - - - - - - - -"
         print ("  Batch : %2d/%2d    " % (iter, iter_times))
         print "- - - - - - - - - - -"
+        obj_cnt = 0
         for iter_data_path, iter_label_path, iter_calib_path in zip(data_path_[start_idx:end_idx],
                                                                     label_path_[start_idx:end_idx],
                                                                     calib_path_[start_idx:end_idx]):
@@ -145,7 +145,7 @@ def get_next_batch(data_path, label_path, calib_path):
             shape = None
             boundary_boxes = None
 
-            print "Loading : " + iter_data_path.split("/")[-1]
+
 
             if param.DATA_FORMAT == 'pcd':
                 point_cloud = load_from_pcd(iter_data_path)
@@ -166,8 +166,11 @@ def get_next_batch(data_path, label_path, calib_path):
 
             voxel_batch.append(voxel)
             label_batch.append(objectness_label)
+            obj_cnt += location.shape[0]
 
-        yield voxel_batch, label_batch
+            print("Loading : %s \tobj : %d" % (iter_data_path.split("/")[-1], location.shape[0]))
+
+        yield voxel_batch, label_batch, obj_cnt
 
 
 def get_test_voxel(data_path):
